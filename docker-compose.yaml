@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  namenode:
+    image: apache/hadoop:3
+    hostname: namenode
+    command: ["hdfs", "namenode"]
+    ports:
+      - 9870:9870
+    env_file:
+      - ./config
+    environment:
+        ENSURE_NAMENODE_DIR: "/tmp/hadoop-root/dfs/name"
+    networks:
+      - cluster-network
+
+  datanode:
+    image: apache/hadoop:3
+    command: ["hdfs", "datanode"]
+    env_file:
+      - ./config
+    networks:
+      - cluster-network
+
+  resourcemanager:
+    image: apache/hadoop:3
+    hostname: resourcemanager
+    command: ["yarn", "resourcemanager"]
+    ports:
+        - 8088:8088
+    env_file:
+      - ./config
+    volumes:
+      - ./test.sh:/opt/test.sh
+    networks:
+      - cluster-network
+
+  nodemanager:
+    image: apache/hadoop:3
+    command: ["yarn", "nodemanager"]
+    env_file:
+      - ./config
+    networks:
+      - cluster-network
+
+  pyspark:
+    image: jupyter/pyspark-notebook:spark-3.3.0
+    command: start-notebook.sh --NotebookApp.token=''
+    hostname: pyspark
+    container_name: pyspark
+    ports:
+      - 8888:8888
+      - 4040:4040
+    networks:
+      - cluster-network
+    volumes:
+      - ./work-data:/home/jovyan/
+
+  postgres:
+    networks:
+      - cluster-network
+    image: postgres:16
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=md5
+      - POSTGRES_DB=hive_metastore
+      - POSTGRES_USER=hive
+      - POSTGRES_PASSWORD=hivepass123
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"  
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data 
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    hostname: hive-metastore
+    container_name: hive-metastore
+    networks:
+      - cluster-network
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_DRIVER=postgres
+      - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/hive_metastore -Djavax.jdo.option.ConnectionUserName=hive -Djavax.jdo.option.ConnectionPassword=hivepass123
+    ports:
+      - "9083:9083"
+    volumes:
+      - ./data/delta/osdp/spark-warehouse:/opt/spark/work-dir/data/delta/osdp/spark-warehouse
+      - ./postgresql-42.5.1.jar:/opt/hive/lib/postgres.jar
+    depends_on:
+      - postgres
+
+  trino:
+    image: trinodb/trino:443
+    container_name: trino
+    hostname: trino
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./etc:/etc/trino
+    networks:
+      - cluster-network
+
+networks:
+  cluster-network:
